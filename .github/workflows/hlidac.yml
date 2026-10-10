@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+    inputs:
+      zkouska:
+        description: "Zkouška: poslat testovací zprávu na Telegram"
+        type: boolean
+        default: false
 
 jobs:
   kontrola:
@@ -17,6 +22,9 @@ jobs:
         id: k
         run: |
           set +e
+          if [ "${{ inputs.zkouska }}" = "true" ]; then
+            echo "zprava=ZKOUŠKA — tohle je jen test, n8n je v pořádku." >> "$GITHUB_OUTPUT"; exit 1
+          fi
           zprava=""
           for pokus in 1 2 3; do
             hz=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://n8n.4lp.cz/healthz)
