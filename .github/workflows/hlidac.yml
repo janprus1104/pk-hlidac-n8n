@@ -1,0 +1,44 @@
+name: Hlídač n8n (zvenku)
+
+# Každých 10 minut zkontroluje, že n8n.4lp.cz žije a dosáhne na Neon.
+# Když ne: job selže (GitHub pošle e-mail) a — pokud je nastavený secret
+# TELEGRAM_BOT_TOKEN — přijde zpráva i na Telegram.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  kontrola:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Zkontroluj n8n
+        id: k
+        run: |
+          set +e
+          zprava=""
+          for pokus in 1 2 3; do
+            hz=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://n8n.4lp.cz/healthz)
+            hb=$(curl -s --max-time 30 https://n8n.4lp.cz/webhook/pk-heartbeat-q7m2x9)
+            if [ "$hz" = "200" ] && echo "$hb" | grep -q '"ok":true'; then
+              echo "OK (pokus $pokus): $hb"; exit 0
+            fi
+            zprava="healthz=$hz, heartbeat=$(echo "$hb" | head -c 200)"
+            sleep 30
+          done
+          echo "zprava=$zprava" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Telegram
+        if: failure() && env.TG != ''
+        env:
+          TG: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: "5955652806"
+          ZPRAVA: ${{ steps.k.outputs.zprava }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=🚨 n8n NEODPOVÍDÁ (kontrola zvenku, GitHub)
+          ${ZPRAVA}
+          Všechny automatizace a hlídači teď nejspíš stojí. Zkontrolujte Railway / napište Claudovi." > /dev/null
